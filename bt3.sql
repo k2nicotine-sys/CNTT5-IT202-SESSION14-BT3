@@ -1,0 +1,76 @@
+USE RikkeiClinicDB;
+
+-- Dữ liệu đầu vào:
+-- p_patient_id  : mã bệnh nhân
+-- p_medicine_id : mã thuốc
+-- p_quantity    : số lượng cấp phát
+
+-- Dữ liệu đầu ra:
+-- p_message     : thông báo trạng thái
+
+DROP PROCEDURE IF EXISTS DispenseMedicine;
+
+DELIMITER //
+
+CREATE PROCEDURE DispenseMedicine(
+    IN p_patient_id INT,
+    IN p_medicine_id INT,
+    IN p_quantity INT,
+    OUT p_message VARCHAR(255)
+)
+BEGIN
+
+    DECLARE v_stock INT;
+    DECLARE v_price DECIMAL(18,2);
+
+    -- Nếu có lỗi thì rollback
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_message = 'Loi: He thong gap su co';
+    END;
+
+    START TRANSACTION;
+
+        -- Lấy tồn kho và đơn giá
+        SELECT stock, price
+        INTO v_stock, v_price
+        FROM Medicines
+        WHERE medicine_id = p_medicine_id;
+
+        -- Kiểm tra tồn kho
+        IF v_stock < p_quantity THEN
+
+            ROLLBACK;
+
+            SET p_message = 'Loi: So luong ton kho khong du';
+
+        ELSE
+
+            -- Trừ tồn kho
+            UPDATE Medicines
+            SET stock = stock - p_quantity
+            WHERE medicine_id = p_medicine_id;
+
+            -- Cộng công nợ bệnh nhân
+            UPDATE Patient_Invoices
+            SET total_due = total_due + (p_quantity * v_price)
+            WHERE patient_id = p_patient_id;
+
+            COMMIT;
+
+            SET p_message = 'Da cap phat thanh cong';
+
+        END IF;
+
+END //
+
+DELIMITER ;
+
+-- Kiểm thử thành công
+CALL DispenseMedicine(1, 2, 2, @msg);
+SELECT @msg;
+
+-- Kiểm thử vượt tồn kho
+CALL DispenseMedicine(1, 2, 100, @msg);
+SELECT @msg;
